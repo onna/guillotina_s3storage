@@ -3,7 +3,6 @@ import asyncio
 import logging
 from typing import AsyncIterator
 
-import aiobotocore
 import aiohttp
 import backoff
 import botocore
@@ -25,7 +24,6 @@ from guillotina_s3storage.interfaces import IS3BlobStore
 from guillotina_s3storage.interfaces import IS3File
 from guillotina_s3storage.interfaces import IS3FileField
 from aiobotocore.config import AioConfig
-from aiobotocore.session import get_session
 from contextlib import AsyncExitStack
 from aiobotocore.session import AioSession
 
@@ -128,7 +126,6 @@ class S3FileStorageManager:
             else:
                 uri = file.uri
                 bucket = file._bucket_name
-
 
         util = get_utility(IS3BlobStore)
         async with S3Manager(util.opts) as s3client:
@@ -351,8 +348,6 @@ class S3BlobStore:
             loop = asyncio.get_event_loop()
         self._loop = loop
 
-        # self._s3aiosession = get_session()
-
         self.opts = dict(
             aws_secret_access_key=self._aws_secret_key,
             aws_access_key_id=self._aws_access_key,
@@ -421,9 +416,6 @@ class S3BlobStore:
     async def iterate_bucket(self):
         container = task_vars.container.get()
         bucket_name = await self.get_bucket_name()
-        # result = await self._s3aioclient.list_objects(
-        #     Bucket=bucket_name, Prefix=container.id + "/"
-        # )
 
         async with S3Manager(self.opts) as s3client:
             async with self._semaphore:

@@ -27,11 +27,10 @@ from guillotina_s3storage.interfaces import IS3BlobStore
 from guillotina_s3storage.interfaces import IS3File
 from guillotina_s3storage.interfaces import IS3FileField
 
-
 log = logging.getLogger("guillotina_s3storage")
 
 MAX_SIZE = 1073741824
-DEFAULT_MAX_POOL_CONNECTIONS = 30
+DEFAULT_MAX_POOL_CONNECTIONS = 5
 
 MIN_UPLOAD_SIZE = 5 * 1024 * 1024
 CHUNK_SIZE = MIN_UPLOAD_SIZE

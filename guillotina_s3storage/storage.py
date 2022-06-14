@@ -3,6 +3,7 @@ import asyncio
 import contextlib
 import logging
 from typing import AsyncIterator
+import time
 
 import aiobotocore
 import aiohttp
@@ -234,7 +235,6 @@ class S3FileStorageManager:
                     log.warn("S3: Error deleting object", exc_info=True)
 
         if dm.get("_mpu") is not None:
-            log.info(f"S3: Attempting to complete remaining MPU for {bucket_name}: {upload_id}")
             await self._complete_multipart_upload(dm)
         await dm.update(
             uri=dm.get("_upload_file_id"),
@@ -251,20 +251,36 @@ class S3FileStorageManager:
         util = get_utility(IS3BlobStore)
         # if blocks is 0, it means the file is of zero length so we need to
         # trick it to finish a multiple part with no data.
+        start_time = time.time()
+        bucket_name = dm.get("_bucket_name")
+        upload_id = dm.get("_upload_file_id")
+        log.info(f"S3: Attempting to complete MPU for {bucket_name}: {upload_id}")
         if dm.get("_block") == 1:
+            part_start_time = time.time()
             part = await self._upload_part(dm, b"")
+            part_end_time = time.time()
+            part_total_time = part_start_time - part_end_time
+            log.info(f"S3: Uploaded part for {upload_id} in {part_total_time}")
             multipart = dm.get("_multipart")
             multipart["Parts"].append(
                 {"PartNumber": dm.get("_block"), "ETag": part["ETag"]}
             )
             await dm.update(_multipart=multipart, _block=dm.get("_block") + 1)
         async with util.s3_client() as client:
+            part_start_time = time.time()
             await client.complete_multipart_upload(
                 Bucket=dm.get("_bucket_name"),
                 Key=dm.get("_upload_file_id"),
                 UploadId=dm.get("_mpu")["UploadId"],
                 MultipartUpload=dm.get("_multipart"),
             )
+            part_end_time = time.time()
+            part_total_time = part_start_time - part_end_time
+            log.info(f"S3: Client completed multipart upload for {upload_id} in {part_total_time}")
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        log.info(f"S3: Completed multi part upload for {upload_id} in {total_time}")
 
     async def exists(self):
         bucket = None

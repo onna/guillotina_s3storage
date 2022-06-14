@@ -260,7 +260,7 @@ class S3FileStorageManager:
             part = await self._upload_part(dm, b"")
             part_end_time = time.time()
             part_total_time = part_start_time - part_end_time
-            log.info(f"S3: Uploaded part for {upload_id} in {part_total_time}")
+            log.info(f"S3: Uploaded part for {upload_id} in {part_total_time:.2f}")
             multipart = dm.get("_multipart")
             multipart["Parts"].append(
                 {"PartNumber": dm.get("_block"), "ETag": part["ETag"]}
@@ -276,11 +276,11 @@ class S3FileStorageManager:
             )
             part_end_time = time.time()
             part_total_time = part_start_time - part_end_time
-            log.info(f"S3: Client completed multipart upload for {upload_id} in {part_total_time}")
+            log.info(f"S3: Client completed multipart upload for {upload_id} in {part_total_time:.2f}")
         
         end_time = time.time()
         total_time = end_time - start_time
-        log.info(f"S3: Completed multi part upload for {upload_id} in {total_time}")
+        log.info(f"S3: Completed multi part upload for {upload_id} in {total_time:.2f}")
 
     async def exists(self):
         bucket = None

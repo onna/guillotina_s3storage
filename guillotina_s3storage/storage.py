@@ -30,7 +30,7 @@ from guillotina_s3storage.interfaces import IS3FileField
 log = logging.getLogger("guillotina_s3storage")
 
 MAX_SIZE = 1073741824
-DEFAULT_MAX_POOL_CONNECTIONS = 5
+DEFAULT_MAX_POOL_CONNECTIONS = 100
 
 MIN_UPLOAD_SIZE = 5 * 1024 * 1024
 CHUNK_SIZE = MIN_UPLOAD_SIZE
@@ -243,7 +243,7 @@ class S3FileStorageManager:
             _upload_file_id=None,
         )
 
-        log.info(f"Finished multi part upload to {bucket_name}: {upload_id}")
+        log.info(f"S3: Finished multi part upload to {bucket_name}: {upload_id}")
 
     @backoff.on_exception(backoff.expo, RETRIABLE_EXCEPTIONS, max_tries=3)
     async def _complete_multipart_upload(self, dm):
@@ -258,7 +258,7 @@ class S3FileStorageManager:
             part_start_time = time.time()
             part = await self._upload_part(dm, b"")
             part_end_time = time.time()
-            part_total_time = part_start_time - part_end_time
+            part_total_time = part_end_time - part_start_time
             log.info(f"S3: Uploaded part for {upload_id} in {part_total_time:.2f}")
             multipart = dm.get("_multipart")
             multipart["Parts"].append(
@@ -274,7 +274,7 @@ class S3FileStorageManager:
                 MultipartUpload=dm.get("_multipart"),
             )
             part_end_time = time.time()
-            part_total_time = part_start_time - part_end_time
+            part_total_time = part_end_time - part_start_time
             log.info(f"S3: Client completed multipart upload for {upload_id} in {part_total_time:.2f}")
         
         end_time = time.time()

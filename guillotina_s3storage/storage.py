@@ -4,7 +4,6 @@ import contextlib
 import logging
 from typing import Any
 from typing import AsyncIterator
-import time
 from typing import Dict
 
 import aiohttp
@@ -29,6 +28,7 @@ from zope.interface import implementer
 from guillotina_s3storage.interfaces import IS3BlobStore
 from guillotina_s3storage.interfaces import IS3File
 from guillotina_s3storage.interfaces import IS3FileField
+
 
 log = logging.getLogger("guillotina_s3storage")
 
@@ -148,12 +148,10 @@ class S3FileStorageManager:
             mpu = dm.get("_mpu")
             upload_file_id = dm.get("_upload_file_id")
             bucket_name = dm.get("_bucket_name")
-            log.info(f"S3: Aborting multi part upload: {upload_file_id}")
             async with util.s3_client() as client:
                 await client.abort_multipart_upload(
                     Bucket=bucket_name, Key=upload_file_id, UploadId=mpu["UploadId"]
                 )
-            log.info(f"S3: Successfully aborted multi part upload: {upload_file_id}")
         except Exception:
             log.warn("S3: Could not abort multipart upload", exc_info=True)
 
@@ -167,8 +165,6 @@ class S3FileStorageManager:
         bucket_name = await util.get_bucket_name()
         upload_id = generate_key(self.context)
 
-        log.info(f"S3: Starting multi part upload to {bucket_name}: {upload_id}")
-
         await dm.update(
             _bucket_name=bucket_name,
             _upload_file_id=upload_id,
@@ -177,13 +173,10 @@ class S3FileStorageManager:
             _mpu=await self._create_multipart(bucket_name, upload_id),
         )
 
-        log.info(f"S3: Multi part upload started to {bucket_name}: {upload_id}")
-
     @backoff.on_exception(backoff.expo, RETRIABLE_EXCEPTIONS, max_tries=3)
     async def _create_multipart(self, bucket_name, upload_id):
         util = get_utility(IS3BlobStore)
         async with util.s3_client() as client:
-            log.info(f"S3: Creating multi part upload to {bucket_name}: ID = {upload_id}")
             return await client.create_multipart_upload(
                 Bucket=bucket_name, Key=upload_id
             )
@@ -204,9 +197,6 @@ class S3FileStorageManager:
     async def _upload_part(self, dm, data):
         util = get_utility(IS3BlobStore)
         async with util.s3_client() as client:
-            bucket_name = dm.get("_bucket_name")
-            upload_id = dm.get("_upload_file_id")
-            log.info(f"S3: Uploading part to {bucket_name}: ID = {upload_id}")
             return await client.upload_part(
                 Bucket=dm.get("_bucket_name"),
                 Key=dm.get("_upload_file_id"),
@@ -216,20 +206,16 @@ class S3FileStorageManager:
             )
 
     async def finish(self, dm):
-        bucket_name = dm.get("_bucket_name")
-        upload_id = dm.get("_upload_file_id")
-        log.info(f"S3: Finishing multi part upload to {bucket_name}: {upload_id}")
         file = self.field.query(self.field.context or self.context, None)
         if _is_uploaded_file(file):
             # delete existing file
             if self.should_clean(file):
                 try:
-                    log.info(f"S3: Deleting upload to {bucket_name}: {upload_id}")
                     await self.delete_upload(file.uri, file._bucket_name)
-                    log.info(f"S3: Deleted upload to {bucket_name}: {upload_id}")
                 except botocore.exceptions.ClientError:
                     log.error(
-                        f"S3: Referenced key {file.uri} could not be found", exc_info=True
+                        f"S3: Referenced key {file.uri} could not be found",
+                        exc_info=True,
                     )
                     log.warn("S3: Error deleting object", exc_info=True)
 
@@ -243,43 +229,25 @@ class S3FileStorageManager:
             _upload_file_id=None,
         )
 
-        log.info(f"S3: Finished multi part upload to {bucket_name}: {upload_id}")
-
     @backoff.on_exception(backoff.expo, RETRIABLE_EXCEPTIONS, max_tries=3)
     async def _complete_multipart_upload(self, dm):
         util = get_utility(IS3BlobStore)
         # if blocks is 0, it means the file is of zero length so we need to
         # trick it to finish a multiple part with no data.
-        start_time = time.time()
-        bucket_name = dm.get("_bucket_name")
-        upload_id = dm.get("_upload_file_id")
-        log.info(f"S3: Attempting to complete MPU for {bucket_name}: {upload_id}")
         if dm.get("_block") == 1:
-            part_start_time = time.time()
             part = await self._upload_part(dm, b"")
-            part_end_time = time.time()
-            part_total_time = part_end_time - part_start_time
-            log.info(f"S3: Uploaded part for {upload_id} in {part_total_time:.2f}")
             multipart = dm.get("_multipart")
             multipart["Parts"].append(
                 {"PartNumber": dm.get("_block"), "ETag": part["ETag"]}
             )
             await dm.update(_multipart=multipart, _block=dm.get("_block") + 1)
         async with util.s3_client() as client:
-            part_start_time = time.time()
             await client.complete_multipart_upload(
                 Bucket=dm.get("_bucket_name"),
                 Key=dm.get("_upload_file_id"),
                 UploadId=dm.get("_mpu")["UploadId"],
                 MultipartUpload=dm.get("_multipart"),
             )
-            part_end_time = time.time()
-            part_total_time = part_end_time - part_start_time
-            log.info(f"S3: Client completed multipart upload for {upload_id} in {part_total_time:.2f}")
-        
-        end_time = time.time()
-        total_time = end_time - start_time
-        log.info(f"S3: Completed multi part upload for {upload_id} in {total_time:.2f}")
 
     async def exists(self):
         bucket = None

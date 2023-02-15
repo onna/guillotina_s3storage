@@ -486,6 +486,7 @@ async def test_download(upload_request, reader, util):
     upload_request._cache_data = b""
     upload_request._last_read_pos = 0
     upload_request.send = AsyncMock()
+    upload_request._payload_writer = AsyncMock()
     ob = create_content()
     ob.file = None
     mng = FileManager(ob, upload_request, IContent["file"].bind(ob))

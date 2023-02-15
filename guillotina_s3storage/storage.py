@@ -80,7 +80,6 @@ class S3FileField(Object):
     for_=(IResource, IRequest, IS3FileField), provides=IS3FileStorageManager
 )
 class S3FileStorageManager:
-
     file_class = S3File
 
     def __init__(self, context, request, field):
@@ -101,7 +100,6 @@ class S3FileStorageManager:
             return await client.get_object(Bucket=bucket, Key=uri, **kwargs)
 
     async def iter_data(self, uri=None, **kwargs):
-
         bucket = None
         if uri is None:
             file = self.field.query(self.field.context or self.context, None)
@@ -296,7 +294,6 @@ class S3FileStorageManager:
 
 class S3BlobStore:
     def __init__(self, settings, loop=None):
-
         self._aws_access_key = settings["aws_client_id"]
         self._aws_secret_key = settings["aws_client_secret"]
 
@@ -400,3 +397,17 @@ class S3BlobStore:
                 "LocationConstraint": self._get_region_name(),
             }
         return bucket_kwargs
+
+    async def iterate_bucket_page(self, page_token=None, prefix=None, max_keys=1000):
+        container = task_vars.container.get()
+        bucket_name = await self.get_bucket_name()
+        async with self.s3_client() as client:
+            args = {
+                "Bucket": bucket_name,
+                "Prefix": prefix or container.id + "/",
+            }
+            if page_token:
+                args["ContinuationToken"] = page_token
+            if max_keys:
+                args["MaxKeys"] = max_keys
+            return await client.list_objects_v2(**args)

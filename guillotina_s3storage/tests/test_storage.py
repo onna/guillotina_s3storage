@@ -154,7 +154,6 @@ async def test_store_file_in_cloud(upload_request):
 
 @pytest.mark.usefixtures("util")
 async def test_store_file_uses_cached_request_data_on_retry(upload_request):
-
     upload_request.headers.update(
         {
             "Content-Type": "image/gif",
@@ -432,7 +431,6 @@ async def test_copy(upload_request):
 
 @pytest.mark.usefixtures("util")
 async def test_iterate_storage(util, upload_request, reader):
-
     upload_request.headers.update(
         {
             "Content-Type": "image/gif",
@@ -458,6 +456,14 @@ async def test_iterate_storage(util, upload_request, reader):
         items.append(item)
     assert len(items) == 20
 
+    # Use the single page method as well.
+    result = await util.iterate_bucket_page(max_keys=10)
+    assert len(result["Contents"]) <= 10
+    assert result.get("IsTruncated")
+    assert result.get("NextContinuationToken")
+    result2 = await util.iterate_bucket_page(page_token=result["NextContinuationToken"])
+    assert len(result2["Contents"]) + len(result["Contents"]) == 20
+
 
 @pytest.mark.usefixtures("util")
 @pytest.mark.asyncio
@@ -480,6 +486,7 @@ async def test_download(upload_request, reader, util):
     upload_request._cache_data = b""
     upload_request._last_read_pos = 0
     upload_request.send = AsyncMock()
+    upload_request._payload_writer = AsyncMock()
     ob = create_content()
     ob.file = None
     mng = FileManager(ob, upload_request, IContent["file"].bind(ob))
@@ -494,7 +501,6 @@ async def test_download(upload_request, reader, util):
 
 @pytest.mark.usefixtures("util")
 async def test_raises_not_retryable(upload_request, reader):
-
     file_data = b""
     # we want to test multiple chunks here...
     while len(file_data) < MAX_REQUEST_CACHE_SIZE:
@@ -523,7 +529,6 @@ async def test_raises_not_retryable(upload_request, reader):
 
 @pytest.mark.usefixtures("util")
 async def test_save_file(upload_request):
-
     ob = create_content()
     ob.file = None
     mng = FileManager(ob, upload_request, IContent["file"].bind(ob))
@@ -538,7 +543,6 @@ async def test_save_file(upload_request):
 
 
 async def test_save_file_multipart(upload_request):
-
     ob = create_content()
     ob.file = None
     mng = FileManager(ob, upload_request, IContent["file"].bind(ob))
@@ -634,7 +638,6 @@ async def test_save_same_chunk_multiple_times(util, upload_request):
 
 @pytest.mark.usefixtures("util")
 async def test_upload_empty_file(upload_request):
-
     ob = create_content()
     ob.file = None
     mng = FileManager(ob, upload_request, IContent["file"].bind(ob))
@@ -651,7 +654,6 @@ async def test_upload_empty_file(upload_request):
 
 @pytest.mark.usefixtures("util")
 async def test_file_exists(upload_request):
-
     upload_request.headers.update(
         {
             "Content-Type": "image/gif",

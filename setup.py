@@ -26,7 +26,7 @@ setup(
     package_data={"": ["*.txt", "*.rst"], "guillotina_s3storage": ["py.typed"]},
     install_requires=[
         "setuptools",
-        "guillotina>=5.0.0,<7",
+        "guillotina>=5.0.0,<6",
         "aiohttp>=3.3.1,<4.0.0",
         "ujson",
         "aiobotocore==2.3.3",
@@ -39,6 +39,7 @@ setup(
             "pytest-aiohttp",
             "pytest-docker-fixtures",
             "async_asgi_testclient",
+            "prometheus_client",
         ]
     },
 )

@@ -410,4 +410,4 @@ class S3BlobStore:
                 args["ContinuationToken"] = page_token
             if max_keys:
                 args["MaxKeys"] = max_keys
-            yield await client.list_objects_v2(**args)
+            return await client.list_objects_v2(**args)

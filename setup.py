@@ -35,8 +35,8 @@ setup(
     ],
     extras_require={
         "test": [
-            "pytest==6.1.2",
-            "pytest-aiohttp==0.3.0",
+            "pytest>=6.0.0,<7",
+            "pytest-aiohttp",
             "pytest-docker-fixtures",
             "async_asgi_testclient",
             "prometheus_client",

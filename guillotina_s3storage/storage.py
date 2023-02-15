@@ -400,7 +400,6 @@ class S3BlobStore:
             }
         return bucket_kwargs
 
-
     async def iterate_bucket_page(self, page_token=None, prefix=None):
         container = task_vars.container.get()
         bucket_name = await self.get_bucket_name()

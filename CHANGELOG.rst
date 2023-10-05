@@ -1,3 +1,8 @@
+5.0.13 (unreleased)
+-------------------
+
+- Allow supplying an explciit delimiter for the bucket
+
 5.0.12 (unreleased)
 -------------------
 

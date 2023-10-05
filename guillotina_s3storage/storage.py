@@ -320,6 +320,7 @@ class S3BlobStore:
         self._bucket_name_format = settings.get(
             "bucket_name_format", "{container}{delimiter}{base}"
         )
+        self._delimiter = settings.get("bucket_delimiter", None)
 
     def _get_region_name(self) -> str:
         return self._opts["region_name"]
@@ -332,10 +333,10 @@ class S3BlobStore:
     async def get_bucket_name(self):
         container = task_vars.container.get()
 
-        if "." in self._bucket_name:
-            char_delimiter = "."
+        if self._delimiter:
+            char_delimiter = self._delimiter
         else:
-            char_delimiter = "-"
+            char_delimiter = "." if "." in self._bucket_name else "-"
 
         bucket_name = self._bucket_name_format.format(
             container=container.id.lower(),

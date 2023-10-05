@@ -1,6 +1,6 @@
 s3:
-	docker run -p 9000:9000 -p 9001:9001 minio/minio server /data --console-address ":9001"
-	docker run -e "SERVICES=s3" -p 4566:4566 localstack/localstack
+	docker run -d -p 9000:9000 -p 9001:9001 minio/minio server /data --console-address ":9001" -name 
+	docker run -d -e "SERVICES=s3" -p 4566:4566 localstack/localstack
 
 install:
 	pip install -e .[test]

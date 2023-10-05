@@ -32,6 +32,7 @@ setup(
         "aiobotocore==2.3.3",
         "botocore==1.24.21",
         "backoff",
+        "zope.interface>=5.0.0,<6"
     ],
     extras_require={
         "test": [

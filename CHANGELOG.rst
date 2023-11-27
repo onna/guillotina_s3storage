@@ -1,8 +1,3 @@
-5.0.13-debug (unreleased)
--------------------
-
-- Debug logging for S3 delete operations
-
 5.0.13 (unreleased)
 -------------------
 

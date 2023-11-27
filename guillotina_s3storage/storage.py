@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import logging
+import traceback
 from typing import Any
 from typing import AsyncIterator
 from typing import Dict
@@ -134,9 +135,11 @@ class S3FileStorageManager:
         if uri is not None:
             try:
                 async with util.s3_client() as client:
+                    log.info(f"Attempting to DELETE {uri}:\n{traceback.print_stack()}")
                     await client.delete_object(Bucket=bucket, Key=uri)
+                    log.info(f"Successfully deleted {uri}")
             except botocore.exceptions.ClientError:
-                log.warn("Error deleting object", exc_info=True)
+                log.warn(f"Error deleting {uri}", exc_info=True)
         else:
             raise AttributeError("No valid uri")
 

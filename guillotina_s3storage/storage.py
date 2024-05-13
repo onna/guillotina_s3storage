@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import contextlib
+from datetime import datetime
 import logging
-from typing import Any
+from typing import Any, List, Optional, Tuple
 from typing import AsyncIterator
 from typing import Dict
 
@@ -21,6 +22,7 @@ from guillotina.interfaces import IExternalFileStorageManager
 from guillotina.interfaces import IFileCleanup
 from guillotina.interfaces import IRequest
 from guillotina.interfaces import IResource
+from guillotina.interfaces import ICloudBlob
 from guillotina.response import HTTPNotFound
 from guillotina.schema import Object
 from zope.interface import implementer
@@ -54,9 +56,15 @@ class S3Exception(Exception):
     pass
 
 
-@implementer(IS3File)
+@implementer(IS3File, ICloudBlob)
 class S3File(BaseCloudFile):
-    """File stored in a GCloud, with a filename."""
+    """File stored in a S3, with a filename."""
+
+    def __init__(self, key: str, bucket: str, size: int, createdTime: Optional[datetime]):
+        self.key = key
+        self.bucket = bucket
+        self.size = size
+        self.createdTime = createdTime
 
 
 def _is_uploaded_file(file):
@@ -412,3 +420,77 @@ class S3BlobStore:
             if max_keys:
                 args["MaxKeys"] = max_keys
             return await client.list_objects_v2(**args)
+
+    async def get_blobs(self, page_token: Optional[str] = None, prefix=None, max_keys=1000) -> Tuple[List[ICloudBlob], str]:
+        """
+        Get a page of items from the bucket
+        """
+        container = task_vars.container.get()
+        bucket_name = await self.get_bucket_name()
+        async with self.s3_client() as client:
+            args = {
+                "Bucket": bucket_name,
+                "Prefix": prefix or container.id + "/",
+            }
+            
+            if page_token:
+                args["ContinuationToken"] = page_token
+            if max_keys:
+                args["MaxKeys"] = max_keys
+
+            response = await client.list_objects_v2(**args)
+            
+            blobs = [S3File(
+                key = item['Key'],
+                manager = self,
+                bucket = bucket_name,
+                size = item['Size'],
+                createdTime = item['LastModified']                
+            ) for item in response['Contents']]
+            next_page_token = response.get('NextContinuationToken', None)
+
+            return blobs, next_page_token
+
+        
+    async def delete_blobs(self, keys: List[str], bucket_name: Optional[str] = None) -> Tuple[List[str], List[str]]:
+        """
+        Deletes a batch of files.  Returns successful and failed keys.
+        """
+
+        if not bucket_name:
+            bucket_name = await self.get_bucket_name()
+
+        async with self.s3_client() as client:
+            args = {
+                "Bucket": bucket_name,
+                "Delete": {
+                    "Objects": [{"Key": key} for key in keys]
+                }
+            }
+
+            raw_response = await client.get_object(**args)
+            response = raw_response.json()
+            success_keys = [o["Key"] for o in response["Deleted"]]
+            failed_keys = [o["Key"] for o in response["Errors"]]
+
+            return success_keys, failed_keys
+
+    async def delete_bucket(self, bucket_name: Optional[str] = None):
+        """
+        Delete the given bucket
+        """
+        async with self.s3_client() as client:
+
+            if not bucket_name:
+                bucket_name = await self.get_bucket_name()
+
+            args = {
+                "Bucket": bucket_name,
+            }
+
+            success = False
+
+            response = await client.delete_bucket(**args)
+            success = response["ResponseMetadata"]["HTTPStatusCode"] == 204
+
+            return success

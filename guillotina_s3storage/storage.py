@@ -14,6 +14,7 @@ from aiobotocore.session import get_session
 from botocore.config import Config
 from guillotina import configure
 from guillotina import task_vars
+from guillotina.db.exceptions import DeleteStorageException
 from guillotina.component import get_utility
 from guillotina.exceptions import FileNotFoundException
 from guillotina.files import BaseCloudFile
@@ -488,9 +489,7 @@ class S3BlobStore:
                 "Bucket": bucket_name,
             }
 
-            success = False
-
             response = await client.delete_bucket(**args)
-            success = response["ResponseMetadata"]["HTTPStatusCode"] == 204
-
-            return success
+            
+            if response["ResponseMetadata"]["HTTPStatusCode"] != 204:
+                raise DeleteStorageException()

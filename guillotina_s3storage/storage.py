@@ -18,6 +18,7 @@ from guillotina.db.exceptions import DeleteStorageException
 from guillotina.component import get_utility
 from guillotina.exceptions import FileNotFoundException
 from guillotina.files import BaseCloudFile
+from guillotina.files.field import BlobMetadata
 from guillotina.files.utils import generate_key
 from guillotina.interfaces import IExternalFileStorageManager
 from guillotina.interfaces import IFileCleanup
@@ -57,15 +58,9 @@ class S3Exception(Exception):
     pass
 
 
-@implementer(IS3File, ICloudBlob)
+@implementer(IS3File)
 class S3File(BaseCloudFile):
     """File stored in a S3, with a filename."""
-
-    def __init__(self, key: str, bucket: str, size: int, createdTime: Optional[datetime]):
-        self.key = key
-        self.bucket = bucket
-        self.size = size
-        self.createdTime = createdTime
 
 
 def _is_uploaded_file(file):
@@ -422,7 +417,7 @@ class S3BlobStore:
                 args["MaxKeys"] = max_keys
             return await client.list_objects_v2(**args)
 
-    async def get_blobs(self, page_token: Optional[str] = None, prefix=None, max_keys=1000) -> Tuple[List[ICloudBlob], str]:
+    async def get_blobs(self, page_token: Optional[str] = None, prefix=None, max_keys=1000) -> Tuple[List[BlobMetadata], str]:
         """
         Get a page of items from the bucket
         """
@@ -441,7 +436,7 @@ class S3BlobStore:
 
             response = await client.list_objects_v2(**args)
             
-            blobs = [S3File(
+            blobs = [BlobMetadata(
                 name = item['Key'],
                 manager = self,
                 bucket = bucket_name,

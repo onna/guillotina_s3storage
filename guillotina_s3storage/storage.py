@@ -442,10 +442,10 @@ class S3BlobStore:
             response = await client.list_objects_v2(**args)
             
             blobs = [S3File(
-                key = item['Key'],
+                name = item['Key'],
                 manager = self,
                 bucket = bucket_name,
-                size = item['Size'],
+                size = int(item['Size']),
                 createdTime = item['LastModified']                
             ) for item in response['Contents']]
             next_page_token = response.get('NextContinuationToken', None)

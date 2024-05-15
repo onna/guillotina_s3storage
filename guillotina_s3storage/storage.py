@@ -19,6 +19,7 @@ from guillotina.component import get_utility
 from guillotina.exceptions import FileNotFoundException
 from guillotina.files import BaseCloudFile
 from guillotina.files.field import BlobMetadata
+from guillotina.interfaces.files import IBlobVacuum
 from guillotina.files.utils import generate_key
 from guillotina.interfaces import IExternalFileStorageManager
 from guillotina.interfaces import IFileCleanup
@@ -296,6 +297,7 @@ class S3FileStorageManager:
         await self.delete_upload(file.uri)
 
 
+@implementer(IBlobVacuum)
 class S3BlobStore:
     def __init__(self, settings, loop=None):
         self._aws_access_key = settings["aws_client_id"]

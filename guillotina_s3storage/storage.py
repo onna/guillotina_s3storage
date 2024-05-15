@@ -12,6 +12,7 @@ import backoff
 import botocore
 from aiobotocore.session import get_session
 from botocore.config import Config
+from dateutil.parser import parse
 from guillotina import configure
 from guillotina import task_vars
 from guillotina.db.exceptions import DeleteStorageException
@@ -440,10 +441,9 @@ class S3BlobStore:
             
             blobs = [BlobMetadata(
                 name = item['Key'],
-                manager = self,
                 bucket = bucket_name,
                 size = int(item['Size']),
-                createdTime = item['LastModified']                
+                createdTime = parse(item['LastModified'])
             ) for item in response['Contents']]
             next_page_token = response.get('NextContinuationToken', None)
 

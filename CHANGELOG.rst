@@ -1,3 +1,8 @@
+5.1.0 (unreleased)
+-------------------
+
+- Implementing cloud vacuum support
+
 5.0.13 (unreleased)
 -------------------
 

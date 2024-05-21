@@ -26,7 +26,6 @@ from guillotina.interfaces import IExternalFileStorageManager
 from guillotina.interfaces import IFileCleanup
 from guillotina.interfaces import IRequest
 from guillotina.interfaces import IResource
-from guillotina.interfaces import ICloudBlob
 from guillotina.response import HTTPNotFound
 from guillotina.schema import Object
 from zope.interface import implementer

@@ -465,7 +465,7 @@ class S3BlobStore:
                 }
             }
 
-            raw_response = await client.get_object(**args)
+            raw_response = await client.delete_objects(**args)
             response = raw_response.json()
             success_keys = [o["Key"] for o in response["Deleted"]]
             failed_keys = [o["Key"] for o in response["Errors"]]

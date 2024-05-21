@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import contextlib
+from datetime import datetime
 import logging
-from typing import Any
+from typing import Any, List, Optional, Tuple
 from typing import AsyncIterator
 from typing import Dict
 
@@ -11,11 +12,15 @@ import backoff
 import botocore
 from aiobotocore.session import get_session
 from botocore.config import Config
+from dateutil.parser import parse
 from guillotina import configure
 from guillotina import task_vars
+from guillotina.db.exceptions import DeleteStorageException
 from guillotina.component import get_utility
 from guillotina.exceptions import FileNotFoundException
 from guillotina.files import BaseCloudFile
+from guillotina.files.field import BlobMetadata
+from guillotina.interfaces.files import IBlobVacuum
 from guillotina.files.utils import generate_key
 from guillotina.interfaces import IExternalFileStorageManager
 from guillotina.interfaces import IFileCleanup
@@ -56,7 +61,7 @@ class S3Exception(Exception):
 
 @implementer(IS3File)
 class S3File(BaseCloudFile):
-    """File stored in a GCloud, with a filename."""
+    """File stored in a S3, with a filename."""
 
 
 def _is_uploaded_file(file):
@@ -292,6 +297,7 @@ class S3FileStorageManager:
         await self.delete_upload(file.uri)
 
 
+@implementer(IBlobVacuum)
 class S3BlobStore:
     def __init__(self, settings, loop=None):
         self._aws_access_key = settings["aws_client_id"]
@@ -412,3 +418,75 @@ class S3BlobStore:
             if max_keys:
                 args["MaxKeys"] = max_keys
             return await client.list_objects_v2(**args)
+
+    async def get_blobs(self, page_token: Optional[str] = None, prefix=None, max_keys=1000) -> Tuple[List[BlobMetadata], str]:
+        """
+        Get a page of items from the bucket
+        """
+        container = task_vars.container.get()
+        bucket_name = await self.get_bucket_name()
+        async with self.s3_client() as client:
+            args = {
+                "Bucket": bucket_name,
+                "Prefix": prefix or container.id + "/",
+            }
+            
+            if page_token:
+                args["ContinuationToken"] = page_token
+            if max_keys:
+                args["MaxKeys"] = max_keys
+
+            response = await client.list_objects_v2(**args)
+            
+            blobs = [BlobMetadata(
+                name = item['Key'],
+                bucket = bucket_name,
+                size = int(item['Size']),
+                createdTime = parse(item['LastModified'])
+            ) for item in response['Contents']]
+            next_page_token = response.get('NextContinuationToken', None)
+
+            return blobs, next_page_token
+
+        
+    async def delete_blobs(self, keys: List[str], bucket_name: Optional[str] = None) -> Tuple[List[str], List[str]]:
+        """
+        Deletes a batch of files.  Returns successful and failed keys.
+        """
+
+        if not bucket_name:
+            bucket_name = await self.get_bucket_name()
+
+        async with self.s3_client() as client:
+            args = {
+                "Bucket": bucket_name,
+                "Delete": {
+                    "Objects": [{"Key": key} for key in keys]
+                }
+            }
+
+            response = await client.delete_objects(**args)
+            success_blobs = response.get("Deleted", [])
+            success_keys = [o["Key"] for o in success_blobs]
+            failed_blobs = response.get("Errors", [])
+            failed_keys = [o["Key"] for o in failed_blobs]
+
+            return success_keys, failed_keys
+
+    async def delete_bucket(self, bucket_name: Optional[str] = None):
+        """
+        Delete the given bucket
+        """
+        async with self.s3_client() as client:
+
+            if not bucket_name:
+                bucket_name = await self.get_bucket_name()
+
+            args = {
+                "Bucket": bucket_name,
+            }
+
+            response = await client.delete_bucket(**args)
+            
+            if response["ResponseMetadata"]["HTTPStatusCode"] != 204:
+                raise DeleteStorageException()

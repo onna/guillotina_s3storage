@@ -442,7 +442,7 @@ class S3BlobStore:
                 name = item['Key'],
                 bucket = bucket_name,
                 size = int(item['Size']),
-                createdTime = parse(item['LastModified'])
+                createdTime = item['LastModified']
             ) for item in response['Contents']]
             next_page_token = response.get('NextContinuationToken', None)
 

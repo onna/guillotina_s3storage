@@ -1,31 +1,32 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import contextlib
-from datetime import datetime
 import logging
-from typing import Any, List, Optional, Tuple
+from typing import Any
 from typing import AsyncIterator
 from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import aiohttp
 import backoff
 import botocore
 from aiobotocore.session import get_session
 from botocore.config import Config
-from dateutil.parser import parse
 from guillotina import configure
 from guillotina import task_vars
-from guillotina.db.exceptions import DeleteStorageException
 from guillotina.component import get_utility
+from guillotina.db.exceptions import DeleteStorageException
 from guillotina.exceptions import FileNotFoundException
 from guillotina.files import BaseCloudFile
-from guillotina.files.field import BlobMetadata
-from guillotina.interfaces.files import IBlobVacuum
+from guillotina.files.field import BlobMetadata  # type: ignore
 from guillotina.files.utils import generate_key
 from guillotina.interfaces import IExternalFileStorageManager
 from guillotina.interfaces import IFileCleanup
 from guillotina.interfaces import IRequest
 from guillotina.interfaces import IResource
+from guillotina.interfaces.files import IBlobVacuum  # type: ignore
 from guillotina.response import HTTPNotFound
 from guillotina.schema import Object
 from zope.interface import implementer
@@ -419,7 +420,9 @@ class S3BlobStore:
                 args["MaxKeys"] = max_keys
             return await client.list_objects_v2(**args)
 
-    async def get_blobs(self, page_token: Optional[str] = None, prefix=None, max_keys=1000) -> Tuple[List[BlobMetadata], str]:
+    async def get_blobs(
+        self, page_token: Optional[str] = None, prefix=None, max_keys=1000
+    ) -> Tuple[List[BlobMetadata], str]:
         """
         Get a page of items from the bucket
         """
@@ -428,28 +431,32 @@ class S3BlobStore:
         async with self.s3_client() as client:
             args = {
                 "Bucket": bucket_name,
-                "Prefix": prefix or container.id + "/",
+                "Prefix": prefix or container.id + "/",  # type: ignore
             }
-            
+
             if page_token:
                 args["ContinuationToken"] = page_token
             if max_keys:
                 args["MaxKeys"] = max_keys
 
             response = await client.list_objects_v2(**args)
-            
-            blobs = [BlobMetadata(
-                name = item['Key'],
-                bucket = bucket_name,
-                size = int(item['Size']),
-                createdTime = item['LastModified']
-            ) for item in response['Contents']]
-            next_page_token = response.get('NextContinuationToken', None)
+
+            blobs = [
+                BlobMetadata(
+                    name=item["Key"],
+                    bucket=bucket_name,
+                    size=int(item["Size"]),
+                    createdTime=item["LastModified"],
+                )
+                for item in response["Contents"]
+            ]
+            next_page_token = response.get("NextContinuationToken", None)
 
             return blobs, next_page_token
 
-        
-    async def delete_blobs(self, keys: List[str], bucket_name: Optional[str] = None) -> Tuple[List[str], List[str]]:
+    async def delete_blobs(
+        self, keys: List[str], bucket_name: Optional[str] = None
+    ) -> Tuple[List[str], List[str]]:
         """
         Deletes a batch of files.  Returns successful and failed keys.
         """
@@ -460,9 +467,7 @@ class S3BlobStore:
         async with self.s3_client() as client:
             args = {
                 "Bucket": bucket_name,
-                "Delete": {
-                    "Objects": [{"Key": key} for key in keys]
-                }
+                "Delete": {"Objects": [{"Key": key} for key in keys]},
             }
 
             response = await client.delete_objects(**args)
@@ -478,7 +483,6 @@ class S3BlobStore:
         Delete the given bucket
         """
         async with self.s3_client() as client:
-
             if not bucket_name:
                 bucket_name = await self.get_bucket_name()
 
@@ -487,6 +491,6 @@ class S3BlobStore:
             }
 
             response = await client.delete_bucket(**args)
-            
+
             if response["ResponseMetadata"]["HTTPStatusCode"] != 204:
                 raise DeleteStorageException()

@@ -262,7 +262,7 @@ class S3FileStorageManager:
         util = get_utility(IS3BlobStore)
         try:
             async with util.s3_client() as client:
-                return await client.get_object(Bucket=bucket, Key=uri) is not None
+                return await client.head_object(Bucket=bucket, Key=uri) is not None
         except botocore.exceptions.ClientError as ex:
             if ex.response["Error"]["Code"] == "NoSuchKey":
                 return False

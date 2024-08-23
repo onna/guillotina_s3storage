@@ -1,3 +1,8 @@
+5.1.2
+-------------------
+
+- Use head_object to check for object existence
+
 5.1.1 (unreleased)
 -------------------
 

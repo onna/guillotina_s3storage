@@ -106,7 +106,6 @@ class S3FileStorageManager:
             return await client.get_object(Bucket=bucket, Key=uri, **kwargs)
 
     async def iter_data(self, uri=None, **kwargs):
-        bucket = None
         if uri is None:
             file = self.field.query(self.field.context or self.context, None)
             if not _is_uploaded_file(file):

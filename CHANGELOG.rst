@@ -1,3 +1,8 @@
+5.1.3
+-------------------
+
+- Update to always retrieve bucket from the container via the S3 utility
+
 5.1.2
 -------------------
 

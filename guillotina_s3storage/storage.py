@@ -98,7 +98,7 @@ class S3FileStorageManager:
         return cleanup is None or cleanup.should_clean(file=file, field=self.field)
 
     @backoff.on_exception(backoff.expo, RETRIABLE_EXCEPTIONS, max_tries=3)
-    async def _download(self, uri, bucket, **kwargs):
+    async def _download(self, uri, bucket=None, **kwargs):
         util = get_utility(IS3BlobStore)
         if bucket is None:
             bucket = await util.get_bucket_name()
@@ -106,16 +106,14 @@ class S3FileStorageManager:
             return await client.get_object(Bucket=bucket, Key=uri, **kwargs)
 
     async def iter_data(self, uri=None, **kwargs):
-        bucket = None
         if uri is None:
             file = self.field.query(self.field.context or self.context, None)
             if not _is_uploaded_file(file):
                 raise FileNotFoundException("File not found")
             else:
                 uri = file.uri
-                bucket = file._bucket_name
 
-        downloader = await self._download(uri, bucket, **kwargs)
+        downloader = await self._download(uri, **kwargs)
 
         # we do not want to timeout ever from this...
         # downloader['Body'].set_socket_timeout(999999)
@@ -214,7 +212,7 @@ class S3FileStorageManager:
             # delete existing file
             if self.should_clean(file):
                 try:
-                    await self.delete_upload(file.uri, file._bucket_name)
+                    await self.delete_upload(file.uri)
                 except botocore.exceptions.ClientError:
                     log.error(
                         f"Referenced key {file.uri} could not be found", exc_info=True
@@ -254,12 +252,12 @@ class S3FileStorageManager:
     async def exists(self):
         bucket = None
         file = self.field.query(self.field.context or self.context, None)
+        util = get_utility(IS3BlobStore)
         if not _is_uploaded_file(file):
             return False
         else:
             uri = file.uri
-            bucket = file._bucket_name
-        util = get_utility(IS3BlobStore)
+            bucket = await util.get_bucket_name()
         try:
             async with util.s3_client() as client:
                 return await client.head_object(Bucket=bucket, Key=uri) is not None
@@ -278,10 +276,11 @@ class S3FileStorageManager:
         util = get_utility(IS3BlobStore)
 
         new_uri = generate_key(self.context)
+        bucket = await util.get_bucket_name()
         async with util.s3_client() as client:
             await client.copy_object(
-                CopySource={"Bucket": file._bucket_name, "Key": file.uri},
-                Bucket=file._bucket_name,
+                CopySource={"Bucket": bucket, "Key": file.uri},
+                Bucket=bucket,
                 Key=new_uri,
             )
         await to_dm.finish(

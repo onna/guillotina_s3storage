@@ -262,7 +262,9 @@ class S3FileStorageManager:
             async with util.s3_client() as client:
                 return await client.head_object(Bucket=bucket, Key=uri) is not None
         except botocore.exceptions.ClientError as ex:
-            if ex.response["Error"]["Code"] == "NoSuchKey":
+            error_code = ex.response["Error"]["Code"]
+            # NoSuchKey for potential backwards compatability
+            if error_code == "404" or error_code == "NoSuchKey":
                 return False
             raise
 

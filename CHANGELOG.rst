@@ -1,3 +1,9 @@
+5.1.4
+-------------------
+
+- Update response code handling for checking blob existence
+
+
 5.1.3
 -------------------
 

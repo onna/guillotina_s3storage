@@ -1,7 +1,12 @@
 import os
 
+import pytest
 from guillotina import testing
 
+
+@pytest.fixture
+def loop(event_loop):
+    return event_loop
 
 def settings_configurator(settings):
     if "applications" in settings:

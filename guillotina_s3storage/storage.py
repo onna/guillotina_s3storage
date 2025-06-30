@@ -28,13 +28,12 @@ from guillotina.interfaces import IRequest
 from guillotina.interfaces import IResource
 from guillotina.interfaces.files import IBlobVacuum  # type: ignore
 from guillotina.response import HTTPNotFound
+from guillotina.response import HTTPPreconditionFailed
 from guillotina.schema import Object
-from zope.interface import implementer
-
 from guillotina_s3storage.interfaces import IS3BlobStore
 from guillotina_s3storage.interfaces import IS3File
 from guillotina_s3storage.interfaces import IS3FileField
-
+from zope.interface import implementer
 
 log = logging.getLogger("guillotina_s3storage")
 
@@ -338,8 +337,38 @@ class S3BlobStore:
         async with self._s3_request_semaphore:
             yield self._s3aioclient
 
+    async def _get_or_create_bucket(self, container, bucket_name):
+        missing = False
+        try:
+            async with self.s3_client() as client:
+                res = await client.head_bucket(Bucket=bucket_name)
+                if res["ResponseMetadata"]["HTTPStatusCode"] == 404:
+                    missing = True
+        except botocore.exceptions.ClientError as e:
+            error_code = int(e.response["Error"]["Code"])
+            if error_code == 404:
+                missing = True
+
+        if missing:
+            async with self.s3_client() as client:
+                await client.create_bucket(**self._get_bucket_kargs(bucket_name))
+
     async def get_bucket_name(self):
         container = task_vars.container.get()
+        s3_bucket_override = getattr(container, "bucket_override", None)
+
+        if s3_bucket_override:
+
+            if not await self.check_bucket_accessibility(s3_bucket_override):
+                log.error(
+                    f"S3 bucket override '{s3_bucket_override}' for container '{container.id}' is not accessible."
+                )
+
+                raise HTTPPreconditionFailed(
+                    content={"reason": f"Bucket {s3_bucket_override} is not accessible"}
+                )
+            else:
+                return s3_bucket_override
 
         if self._delimiter:
             char_delimiter = self._delimiter
@@ -357,20 +386,9 @@ class S3BlobStore:
         if bucket_name in self._cached_buckets:
             return bucket_name
 
-        missing = False
-        try:
-            async with self.s3_client() as client:
-                res = await client.head_bucket(Bucket=bucket_name)
-                if res["ResponseMetadata"]["HTTPStatusCode"] == 404:
-                    missing = True
-        except botocore.exceptions.ClientError as e:
-            error_code = int(e.response["Error"]["Code"])
-            if error_code == 404:
-                missing = True
+        await self._get_or_create_bucket(container, bucket_name)
 
-        if missing:
-            async with self.s3_client() as client:
-                await client.create_bucket(**self._get_bucket_kargs(bucket_name))
+        self._cached_buckets.append(bucket_name)
         return bucket_name
 
     async def initialize(self, app=None):
@@ -495,3 +513,17 @@ class S3BlobStore:
 
             if response["ResponseMetadata"]["HTTPStatusCode"] != 204:
                 raise DeleteStorageException()
+
+    async def check_bucket_accessibility(self, bucket_name: str) -> bool:
+        """
+        Check if the bucket is accessible.
+        """
+        try:
+            async with self.s3_client() as client:
+                await client.head_bucket(Bucket=bucket_name)
+            return True
+        except botocore.exceptions.ClientError as e:
+            error_code = int(e.response["Error"]["Code"])
+            if error_code == 404:
+                return False
+            raise S3Exception(f"Error checking bucket accessibility: {e}")

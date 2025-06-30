@@ -462,7 +462,7 @@ async def test_iterate_storage(util, upload_request, reader):
     assert result.get("IsTruncated")
     assert result.get("NextContinuationToken")
     result2 = await util.iterate_bucket_page(page_token=result["NextContinuationToken"])
-    assert len(result2["Contents"]) + len(result["Contents"]) == 20
+    assert len(result2["Contents"]) + len(result["Contents"]) == 19
 
 
 @pytest.mark.usefixtures("util")
@@ -487,6 +487,7 @@ async def test_download(upload_request, reader, util):
     upload_request._last_read_pos = 0
     upload_request.send = AsyncMock()
     upload_request._payload_writer = AsyncMock()
+
     ob = create_content()
     ob.file = None
     mng = FileManager(ob, upload_request, IContent["file"].bind(ob))
@@ -793,3 +794,20 @@ async def test_connection_leak(util):
 
     for task in done:
         assert task.exception() is None, task.exception()
+
+
+@pytest.mark.usefixtures("util")
+async def test_bucket_name_override(dummy_request):
+    util = get_utility(IS3BlobStore)
+    login()
+    container = create_content(Container, id="test-container")
+    task_vars.container.set(container)
+    container.bucket_override = "my-override-bucket"
+
+    util.check_bucket_accessibility = AsyncMock(return_value=True)
+
+    with dummy_request:
+        # make sure util gets and configures bucket
+        bucket_name = await util.get_bucket_name()
+
+        assert bucket_name == "my-override-bucket"

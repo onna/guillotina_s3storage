@@ -1,12 +1,7 @@
 import os
 
-import pytest
 from guillotina import testing
 
-
-@pytest.fixture
-def loop(event_loop):
-    return event_loop
 
 def settings_configurator(settings):
     if "applications" in settings:
@@ -28,7 +23,7 @@ def settings_configurator(settings):
 
     if "S3CLOUD_ID" not in os.environ:
         settings["load_utilities"]["s3"]["settings"].update(
-            {"endpoint_url": "http://localhost:4566", "ssl": False}
+            {"endpoint_url": "http://localstack:4566", "ssl": False}
         )
 
 

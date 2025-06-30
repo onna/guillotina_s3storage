@@ -29,11 +29,12 @@ from guillotina.interfaces import IResource
 from guillotina.interfaces.files import IBlobVacuum  # type: ignore
 from guillotina.response import HTTPNotFound
 from guillotina.response import HTTPPreconditionFailed
+from zope.interface import implementer
+
 from guillotina.schema import Object
 from guillotina_s3storage.interfaces import IS3BlobStore
 from guillotina_s3storage.interfaces import IS3File
 from guillotina_s3storage.interfaces import IS3FileField
-from zope.interface import implementer
 
 log = logging.getLogger("guillotina_s3storage")
 

@@ -27,17 +27,17 @@ setup(
     install_requires=[
         "setuptools",
         "guillotina @ git+https://github.com/onna/guillotina@master#egg=guillotina",
-        "aiohttp>=3.3.1,<4.0.0",
+        "aiohttp==3.10.2",
         "ujson",
-        "aiobotocore==2.3.3",
-        "botocore==1.24.21",
+        "aiobotocore==2.23.0",
+        "botocore==1.38.27",
         "backoff",
-        "zope.interface>=5.0.0,<6"
+        "zope-interface<6,>=5.0.0"
     ],
     extras_require={
         "test": [
-            "pytest>=8.2.2",
-            "pytest-aiohttp>=1.0.5",
+            "pytest==8.2.2",
+            "pytest-aiohttp==1.0.5",
             "pytest-docker-fixtures",
             "async_asgi_testclient",
             "prometheus_client",

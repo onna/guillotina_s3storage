@@ -3,6 +3,7 @@ import base64
 import random
 from hashlib import md5
 from unittest.mock import AsyncMock
+import pytest_asyncio
 
 import backoff
 import botocore.exceptions
@@ -71,12 +72,12 @@ class FakeContentReader:
         self._pointer = pos
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture
 def reader():
     yield FakeContentReader()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture
 def setup_container(dummy_request):
     login()
     container = create_content(Container, id="test-container")
@@ -84,10 +85,11 @@ def setup_container(dummy_request):
     yield container
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture
 async def util(setup_container):
     util = get_utility(IS3BlobStore)
     # cleanup
+
     async for item in util.iterate_bucket():
         async with util.s3_client() as client:
             await client.delete_object(
@@ -99,7 +101,7 @@ async def util(setup_container):
     task_vars.container.set(None)
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture
 async def upload_request(dummy_request, reader, util, mock_txn):
     dummy_request._stream_reader = dummy_request._payload = reader
     yield dummy_request

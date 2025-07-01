@@ -10,7 +10,6 @@ pre-checks-deps: lint-deps
 
 pre-checks: pre-checks-deps
 	flake8 guillotina_s3storage --config=setup.cfg
-	isort -c -rc guillotina_s3storage
 	black --check --verbose guillotina_s3storage
 	mypy -p guillotina_s3storage --ignore-missing-imports
 

@@ -26,5 +26,10 @@ def settings_configurator(settings):
             {"endpoint_url": "http://localhost:4566", "ssl": False}
         )
 
+    if "S3_HOST" in os.environ:
+        settings["load_utilities"]["s3"]["settings"].update(
+            {"endpoint_url": f"http://{os.environ['S3_HOST']}:4566", "ssl": False}
+        )
+
 
 testing.configure_with(settings_configurator)

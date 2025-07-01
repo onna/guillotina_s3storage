@@ -1,3 +1,8 @@
+5.1.5
+-------------------
+
+- Handle bucket override in settings
+
 5.1.4
 -------------------
 

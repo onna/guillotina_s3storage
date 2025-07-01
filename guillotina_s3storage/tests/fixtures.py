@@ -23,7 +23,12 @@ def settings_configurator(settings):
 
     if "S3CLOUD_ID" not in os.environ:
         settings["load_utilities"]["s3"]["settings"].update(
-            {"endpoint_url": "http://localstack:4566", "ssl": False}
+            {"endpoint_url": "http://localhost:4566", "ssl": False}
+        )
+
+    if "HOSTNAME" in os.environ:
+        settings["load_utilities"]["s3"]["settings"].update(
+            {"endpoint_url": f"http://{os.environ['HOSTNAME']}:4566", "ssl": False}
         )
 
 

@@ -2,7 +2,6 @@
 from setuptools import find_packages
 from setuptools import setup
 
-
 setup(
     name="guillotina_s3storage",
     description="s3 guillotina storage support",
@@ -32,7 +31,7 @@ setup(
         "aiobotocore==2.23.0",
         "botocore==1.38.27",
         "backoff",
-        "zope-interface<6,>=5.0.0"
+        "zope-interface<6,>=5.0.0",
     ],
     extras_require={
         "test": [

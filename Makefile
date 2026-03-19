@@ -4,9 +4,10 @@ s3:
 
 install:
 	pip install -e .[test]
+	pip install setuptools
 
 pre-checks-deps: lint-deps
-	pip install flake8 mypy_zope "mypy<0.782"
+	pip install flake8 "mypy_zope>=1.0,<2" "mypy>=1.8,<2"
 
 pre-checks: pre-checks-deps
 	flake8 guillotina_s3storage --config=setup.cfg

@@ -2,7 +2,6 @@
 from setuptools import find_packages
 from setuptools import setup
 
-
 setup(
     name="guillotina_s3storage",
     description="s3 guillotina storage support",
@@ -27,12 +26,12 @@ setup(
     install_requires=[
         "setuptools",
         "guillotina @ git+https://github.com/onna/guillotina@master#egg=guillotina",
-        "aiohttp==3.10.2",
+        "aiohttp>=3.10.2,<4.0.0",
         "ujson",
         "aiobotocore==2.23.0",
         "botocore==1.38.27",
         "backoff",
-        "zope-interface<6,>=5.0.0"
+        "zope-interface<6,>=5.0.0",
     ],
     extras_require={
         "test": [

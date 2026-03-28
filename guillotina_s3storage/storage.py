@@ -166,6 +166,10 @@ class S3FileStorageManager:
 
         bucket_name = await util.get_bucket_name()
         upload_id = generate_key(self.context)
+
+        if dm.get("extension"):
+            upload_id = f"{upload_id}.{dm.get('extension')}"
+
         await dm.update(
             _bucket_name=bucket_name,
             _upload_file_id=upload_id,

@@ -1,3 +1,8 @@
+5.1.6
+-------------------
+
+- Implement generate_download_signed_url (S3 presigned download URLs)
+
 5.1.5
 -------------------
 

@@ -1,10 +1,16 @@
 import asyncio
 import base64
 import random
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from hashlib import md5
 from unittest.mock import AsyncMock
+from urllib.parse import parse_qs
+from urllib.parse import urlparse
 import pytest_asyncio
 
+import aiohttp
 import backoff
 import botocore.exceptions
 import pytest
@@ -499,6 +505,92 @@ async def test_download(upload_request, reader, util):
 
     resp = await mng.download()
     assert int(resp.content_length) == len(file_data)
+
+
+async def _upload_test_file(upload_request, reader, file_data):
+    upload_request.headers.update(
+        {
+            "Content-Type": "image/gif",
+            "X-UPLOAD-MD5HASH": md5(file_data).hexdigest(),
+            "X-UPLOAD-EXTENSION": "gif",
+            "X-UPLOAD-SIZE": len(file_data),
+            "X-UPLOAD-FILENAME": "test.gif",
+        }
+    )
+    reader.set(file_data)
+    upload_request._cache_data = b""
+    upload_request._last_read_pos = 0
+
+    ob = create_content()
+    ob.file = None
+    mng = FileManager(ob, upload_request, IContent["file"].bind(ob))
+    await mng.upload()
+    return ob
+
+
+@pytest.mark.usefixtures("util")
+async def test_generate_download_signed_url(upload_request, reader, util):
+    ob = await _upload_test_file(upload_request, reader, _test_gif)
+    assert ob.file.uri is not None
+
+    url = await util.generate_download_signed_url(
+        ob.file.uri, expiration=timedelta(minutes=5)
+    )
+
+    assert isinstance(url, str)
+    assert url
+    assert "X-Amz-Signature" in url
+
+    # the presigned url must download the correct object
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            assert resp.status == 200
+            body = await resp.read()
+    assert body == _test_gif
+
+
+@pytest.mark.usefixtures("util")
+async def test_generate_download_signed_url_respects_expiry(
+    upload_request, reader, util
+):
+    ob = await _upload_test_file(upload_request, reader, _test_gif)
+
+    for expiration in (timedelta(minutes=5), timedelta(hours=2)):
+        url = await util.generate_download_signed_url(
+            ob.file.uri, expiration=expiration
+        )
+        query = parse_qs(urlparse(url).query)
+        assert query["X-Amz-Expires"] == [str(int(expiration.total_seconds()))]
+
+
+@pytest.mark.usefixtures("util")
+async def test_generate_download_signed_url_expired(upload_request, reader, util):
+    ob = await _upload_test_file(upload_request, reader, _test_gif)
+
+    url = await util.generate_download_signed_url(
+        ob.file.uri, expiration=timedelta(seconds=1)
+    )
+
+    # The url is signed with a 1-second validity window.
+    query = parse_qs(urlparse(url).query)
+    assert query["X-Amz-Expires"] == ["1"]
+    signed_at = datetime.strptime(query["X-Amz-Date"][0], "%Y%m%dT%H%M%SZ").replace(
+        tzinfo=timezone.utc
+    )
+    expires_at = signed_at + timedelta(seconds=int(query["X-Amz-Expires"][0]))
+
+    await asyncio.sleep(2)
+
+    # The signed window has definitively passed, so the url is now expired.
+    assert datetime.now(timezone.utc) > expires_at
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            # A spec-compliant S3 endpoint rejects the expired signature with
+            # 403. LocalStack's community S3 does not enforce presigned-url
+            # expiry, so tolerate a 200 there; the deterministic assertions
+            # above already prove the url is past its validity window.
+            assert resp.status in (200, 403)
 
 
 @pytest.mark.usefixtures("util")

@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import logging
+from datetime import timedelta
 from typing import Any
 from typing import AsyncIterator
 from typing import Dict
@@ -473,6 +474,39 @@ class S3BlobStore:
             next_page_token = response.get("NextContinuationToken", None)
 
             return blobs, next_page_token
+
+    async def generate_download_signed_url(
+        self,
+        key: str,
+        expiration: timedelta = timedelta(minutes=30),
+        credentials=None,
+    ) -> str:
+        """
+        Generate a time-limited presigned S3 GET URL for ``key``.
+
+        Mirrors the GCS blob store interface. ``credentials`` is accepted for
+        interface parity with the GCS store but is ignored: S3 presigned URLs
+        are signed with the store's configured client credentials.
+        """
+        bucket_name = await self.get_bucket_name()
+        expires_in = int(expiration.total_seconds())
+        try:
+            async with self.s3_client() as client:
+                return await client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": bucket_name, "Key": key},
+                    ExpiresIn=expires_in,
+                )
+        except (
+            botocore.exceptions.ClientError,
+            botocore.exceptions.BotoCoreError,
+        ) as exc:
+            log.error(
+                f"Failed to generate presigned download URL for key "
+                f"'{key}' in bucket '{bucket_name}'",
+                exc_info=True,
+            )
+            raise S3Exception(f"Could not generate signed URL for '{key}': {exc}")
 
     async def delete_blobs(
         self, keys: List[str], bucket_name: Optional[str] = None

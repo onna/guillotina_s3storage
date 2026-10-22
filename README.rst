@@ -29,10 +29,18 @@ Example config.json:
                 "endpoint_url": null,
                 "ssl": true,
                 "verify_ssl": null,
-                "region_name": null
+                "region_name": null,
+                "max_pool_connections": 30,
+                "connect_timeout": 5,
+                "read_timeout": 10,
+                "max_attempts": 2
             }
         }
     }
+
+``connect_timeout`` and ``read_timeout`` are in seconds. ``read_timeout`` also
+bounds each socket read of a download's body stream. ``max_attempts`` is the
+total number of botocore attempts per request, including the first.
 
 
 Getting started with development

@@ -6,13 +6,13 @@ from unittest.mock import MagicMock
 
 import botocore.exceptions
 import pytest
-import pytest_asyncio
 from aiohttp import web
 
 from guillotina_s3storage import storage
-from guillotina_s3storage.storage import DEFAULT_DOWNLOAD_MAX_RESUMES
-from guillotina_s3storage.storage import DEFAULT_DOWNLOAD_TIMEOUT
+from guillotina_s3storage.storage import DEFAULT_CONNECT_TIMEOUT
+from guillotina_s3storage.storage import DEFAULT_MAX_ATTEMPTS
 from guillotina_s3storage.storage import DEFAULT_MAX_POOL_CONNECTIONS
+from guillotina_s3storage.storage import DEFAULT_READ_TIMEOUT
 from guillotina_s3storage.storage import S3BlobStore
 from guillotina_s3storage.storage import S3FileStorageManager
 
@@ -21,120 +21,16 @@ BASE_SETTINGS = {
     "aws_client_secret": "x",
     "bucket": "testbucket",
 }
-DATA = bytes(range(256)) * 16
-
-
-class FakeS3:
-    def __init__(self):
-        self.data = DATA
-        self.etag = '"v1"'
-        self.stall_after = []
-        self.requests = []
-        self.release = asyncio.Event()
-
-    async def handle(self, request):
-        self.requests.append(dict(request.headers))
-        if_match = request.headers.get("If-Match")
-        if if_match is not None and if_match != self.etag:
-            return web.Response(
-                status=412,
-                content_type="application/xml",
-                text="<Error><Code>PreconditionFailed</Code>"
-                "<Message>At least one of the pre-conditions you specified "
-                "did not hold</Message></Error>",
-            )
-
-        body = self.data
-        status = 200
-        headers = {"ETag": self.etag}
-        range_header = request.headers.get("Range")
-        if range_header:
-            first, _, last = range_header[len("bytes=") :].partition("-")
-            last = int(last) if last else len(self.data) - 1
-            body = self.data[int(first) : last + 1]
-            status = 206
-            headers["Content-Range"] = f"bytes {first}-{last}/{len(self.data)}"
-
-        stall_after = self.stall_after.pop(0) if self.stall_after else None
-        resp = web.StreamResponse(status=status, headers=headers)
-        resp.content_length = len(body)
-        await resp.prepare(request)
-        if stall_after is None:
-            await resp.write(body)
-            return resp
-        await resp.write(body[:stall_after])
-        await self.release.wait()
-        return resp
-
-
-@pytest_asyncio.fixture
-async def fake_s3():
-    server = FakeS3()
-    app = web.Application()
-    app.router.add_get("/{tail:.*}", server.handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0)
-    await site.start()
-    server.url = f"http://127.0.0.1:{site._server.sockets[0].getsockname()[1]}"
-    yield server
-    server.release.set()
-    await runner.cleanup()
-
-
-@pytest_asyncio.fixture
-async def make_store(fake_s3, monkeypatch):
-    stores = []
-
-    async def _make(**settings):
-        defaults = dict(
-            BASE_SETTINGS,
-            endpoint_url=fake_s3.url,
-            ssl=False,
-            region_name="us-east-1",
-            read_timeout=0.5,
-            max_attempts=1,
-        )
-        store = S3BlobStore(dict(defaults, **settings))
-        await store.initialize()
-        store.get_bucket_name = AsyncMock(return_value="testbucket")
-        monkeypatch.setattr(storage, "get_utility", lambda iface: store)
-        stores.append(store)
-        return store
-
-    yield _make
-    for store in stores:
-        await store.finalize()
-
-
-def _manager():
-    return S3FileStorageManager(MagicMock(), MagicMock(), MagicMock())
-
-
-async def _read(iterator):
-    data = b""
-    async for chunk in iterator:
-        data += chunk
-    return data
-
-
-def _s3_logs(caplog, level):
-    return [
-        r
-        for r in caplog.records
-        if r.name == "guillotina_s3storage" and r.levelno == level
-    ]
 
 
 def test_client_config_defaults():
     util = S3BlobStore(dict(BASE_SETTINGS))
     config = util._opts["config"]
     assert config.max_pool_connections == DEFAULT_MAX_POOL_CONNECTIONS
-    assert config.connect_timeout == 60
-    assert config.read_timeout == 60
-    assert config.retries is None
-    assert util.download_timeout == DEFAULT_DOWNLOAD_TIMEOUT
-    assert util.download_max_resumes == DEFAULT_DOWNLOAD_MAX_RESUMES
+    assert config.connect_timeout == DEFAULT_CONNECT_TIMEOUT
+    assert config.read_timeout == DEFAULT_READ_TIMEOUT
+    assert config.retries == {"total_max_attempts": DEFAULT_MAX_ATTEMPTS}
+    assert util.download_timeout == 30
 
 
 def test_client_config_from_string_settings():
@@ -143,150 +39,89 @@ def test_client_config_from_string_settings():
         max_pool_connections="60",
         connect_timeout="3",
         read_timeout="7.5",
-        max_attempts="1",
-        download_timeout="20",
-        download_max_resumes="5",
+        max_attempts="4",
     )
     util = S3BlobStore(settings)
     config = util._opts["config"]
     assert config.max_pool_connections == 60
     assert config.connect_timeout == 3.0
     assert config.read_timeout == 7.5
-    assert config.retries == {"total_max_attempts": 1}
+    assert config.retries == {"total_max_attempts": 4}
     assert util._s3_request_semaphore._value == 60
-    assert util.download_timeout == 20.0
-    assert util.download_max_resumes == 5
-
-
-def test_client_config_unset_values_use_defaults():
-    settings = dict(
-        BASE_SETTINGS,
-        max_pool_connections=None,
-        connect_timeout=None,
-        read_timeout="",
-        max_attempts=None,
-        download_timeout=None,
-    )
-    util = S3BlobStore(settings)
-    config = util._opts["config"]
-    assert config.max_pool_connections == DEFAULT_MAX_POOL_CONNECTIONS
-    assert config.connect_timeout == 60
-    assert config.read_timeout == 60
-    assert util.download_timeout == DEFAULT_DOWNLOAD_TIMEOUT
+    assert util.download_timeout == 4 * (3 + 7.5)
 
 
 @pytest.mark.asyncio
-async def test_download_without_stall(fake_s3, make_store):
-    await make_store()
-    assert await _read(_manager().iter_data(uri="key")) == DATA
-    assert "Range" not in fake_s3.requests[0]
-
-
-@pytest.mark.asyncio
-async def test_empty_file_is_read_without_range(fake_s3, make_store):
-    fake_s3.data = b""
-    await make_store()
-    assert await _read(_manager().iter_data(uri="key")) == b""
-    assert "Range" not in fake_s3.requests[0]
-
-
-@pytest.mark.asyncio
-async def test_stall_resumes_from_offset(fake_s3, make_store, caplog):
-    fake_s3.stall_after = [1000]
-    await make_store()
-
-    with caplog.at_level(logging.WARNING, logger="guillotina_s3storage"):
-        assert await _read(_manager().iter_data(uri="key")) == DATA
-
-    assert len(fake_s3.requests) == 2
-    assert fake_s3.requests[1]["Range"] == "bytes=1000-"
-    assert fake_s3.requests[1]["If-Match"] == fake_s3.etag
-    assert len(_s3_logs(caplog, logging.WARNING)) == 1
-    assert _s3_logs(caplog, logging.ERROR) == []
-
-
-@pytest.mark.asyncio
-async def test_range_resume_keeps_end(fake_s3, make_store, monkeypatch):
-    fake_s3.stall_after = [500]
-    await make_store()
-    monkeypatch.setattr(storage, "_is_uploaded_file", lambda file: True)
-    mng = _manager()
-    mng.field.query.return_value = MagicMock(uri="key")
-
-    data = await _read(mng.read_range(100, 2100))
-
-    assert data == DATA[100:2100]
-    assert fake_s3.requests[0]["Range"] == "bytes=100-2099"
-    assert fake_s3.requests[1]["Range"] == "bytes=600-2099"
-
-
-@pytest.mark.asyncio
-async def test_resume_count_resets_on_progress(fake_s3, make_store):
-    fake_s3.stall_after = [100, 100, 100, 100]
-    await make_store(download_max_resumes=1)
-
-    assert await _read(_manager().iter_data(uri="key")) == DATA
-    assert len(fake_s3.requests) == 5
-
-
-@pytest.mark.asyncio
-async def test_repeated_stalls_fail_after_max_resumes(fake_s3, make_store, caplog):
-    fake_s3.stall_after = [0, 0, 0, 0]
-    await make_store(download_max_resumes=2)
-
-    with caplog.at_level(logging.WARNING, logger="guillotina_s3storage"):
-        with pytest.raises(asyncio.TimeoutError):
-            await _read(_manager().iter_data(uri="key"))
-
-    assert len(fake_s3.requests) == 3
-    assert len(_s3_logs(caplog, logging.WARNING)) == 2
-    errors = _s3_logs(caplog, logging.ERROR)
-    assert len(errors) == 1
-    assert "key" in errors[0].getMessage()
-
-
-@pytest.mark.asyncio
-async def test_changed_object_fails_on_412(fake_s3, make_store, caplog):
-    fake_s3.stall_after = [1000]
-    await make_store()
-    received = b""
+@pytest.mark.parametrize(
+    "exc",
+    [
+        botocore.exceptions.ReadTimeoutError(endpoint_url="http://s3"),
+        asyncio.TimeoutError(),
+    ],
+)
+async def test_iter_data_logs_read_failure(caplog, exc):
+    mng = S3FileStorageManager(MagicMock(), MagicMock(), MagicMock())
+    mng._download = AsyncMock(side_effect=exc)
 
     with caplog.at_level(logging.ERROR, logger="guillotina_s3storage"):
-        with pytest.raises(botocore.exceptions.ClientError) as exc_info:
-            async for chunk in _manager().iter_data(uri="key"):
-                received += chunk
-                fake_s3.etag = '"v2"'
+        with pytest.raises(type(exc)):
+            async for _ in mng.iter_data(uri="some/key"):
+                pass
 
-    assert exc_info.value.response["Error"]["Code"] == "PreconditionFailed"
-    assert received == DATA[:1000]
-    assert len(fake_s3.requests) == 2
-    assert len(_s3_logs(caplog, logging.ERROR)) == 1
+    record = next(r for r in caplog.records if r.name == "guillotina_s3storage")
+    assert "some/key" in record.getMessage()
+    assert record.exc_info[1] is exc
 
 
 @pytest.mark.asyncio
-async def test_client_error_is_not_retried(fake_s3, make_store):
-    fake_s3.etag = '"v2"'
-    await make_store()
+async def test_pool_wait_is_bounded(aiohttp_server, monkeypatch, caplog):
+    requests = []
+    release = asyncio.Event()
 
-    with pytest.raises(botocore.exceptions.ClientError):
-        await _read(_manager().iter_data(uri="key", IfMatch='"v1"'))
-    assert len(fake_s3.requests) == 1
+    async def handler(request):
+        requests.append(request.path)
+        resp = web.StreamResponse(headers={"ETag": '"v1"'})
+        resp.content_length = 2
+        await resp.prepare(request)
+        await resp.write(b"x")
+        await release.wait()
+        return resp
 
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
 
-@pytest.mark.asyncio
-async def test_pool_wait_is_bounded(fake_s3, make_store, caplog):
-    fake_s3.stall_after = [1000]
-    await make_store(max_pool_connections=1, download_timeout=0.5, read_timeout=30)
+    util = S3BlobStore(
+        dict(
+            BASE_SETTINGS,
+            endpoint_url=str(server.make_url("")),
+            ssl=False,
+            region_name="us-east-1",
+            max_pool_connections=1,
+            connect_timeout=0.1,
+            read_timeout=0.2,
+            max_attempts=1,
+        )
+    )
+    await util.initialize()
+    util.get_bucket_name = AsyncMock(return_value="testbucket")
+    monkeypatch.setattr(storage, "get_utility", lambda iface: util)
 
-    first = _manager().iter_data(uri="first")
-    await first.__anext__()
+    first = S3FileStorageManager(MagicMock(), MagicMock(), MagicMock())
+    first_data = first.iter_data(uri="first")
+    assert await first_data.__anext__() == b"x"
 
+    second = S3FileStorageManager(MagicMock(), MagicMock(), MagicMock())
     started = time.monotonic()
     with caplog.at_level(logging.ERROR, logger="guillotina_s3storage"):
         with pytest.raises(asyncio.TimeoutError):
-            await _read(_manager().iter_data(uri="second"))
+            async for _ in second.iter_data(uri="second"):
+                pass
 
     assert time.monotonic() - started < 2
-    assert len(fake_s3.requests) == 1
-    assert "second" in _s3_logs(caplog, logging.ERROR)[0].getMessage()
-    await first.aclose()
+    assert len(requests) == 1
+    assert "second" in caplog.records[-1].getMessage()
+
+    release.set()
+    await first_data.aclose()
+    await util.finalize()

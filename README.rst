@@ -31,16 +31,27 @@ Example config.json:
                 "verify_ssl": null,
                 "region_name": null,
                 "max_pool_connections": 30,
-                "connect_timeout": 5,
-                "read_timeout": 10,
-                "max_attempts": 2
+                "connect_timeout": null,
+                "read_timeout": null,
+                "max_attempts": null,
+                "download_timeout": 30,
+                "download_max_resumes": 3
             }
         }
     }
 
-``connect_timeout`` and ``read_timeout`` are in seconds. ``read_timeout`` also
-bounds each socket read of a download's body stream. ``max_attempts`` is the
-total number of botocore attempts per request, including the first.
+``connect_timeout``, ``read_timeout`` and ``max_attempts`` configure the S3
+client for every call. Unset, they use the botocore defaults. ``read_timeout`` is
+in seconds and also bounds each socket read of a download's body stream.
+``max_attempts`` is the total number of botocore attempts per request, including
+the first.
+
+``download_timeout`` bounds, in seconds, the wait for a pooled connection plus
+the time to the response headers of each download request. A download that
+fails before any response arrives raises at once. A download whose body read
+stalls or breaks resumes from the last byte received, up to
+``download_max_resumes`` times in a row without progress, and fails if the
+object changed in between.
 
 
 Getting started with development

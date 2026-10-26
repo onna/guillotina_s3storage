@@ -41,6 +41,9 @@ log = logging.getLogger("guillotina_s3storage")
 
 MAX_SIZE = 1073741824
 DEFAULT_MAX_POOL_CONNECTIONS = 30
+DEFAULT_CONNECT_TIMEOUT = 5
+DEFAULT_READ_TIMEOUT = 10
+DEFAULT_MAX_ATTEMPTS = 2
 
 MIN_UPLOAD_SIZE = 5 * 1024 * 1024
 CHUNK_SIZE = MIN_UPLOAD_SIZE
@@ -103,8 +106,9 @@ class S3FileStorageManager:
         util = get_utility(IS3BlobStore)
         if bucket is None:
             bucket = await util.get_bucket_name()
-        async with util.s3_client() as client:
-            return await client.get_object(Bucket=bucket, Key=uri, **kwargs)
+        async with asyncio.timeout(util.download_timeout):
+            async with util.s3_client() as client:
+                return await client.get_object(Bucket=bucket, Key=uri, **kwargs)
 
     async def iter_data(self, uri=None, **kwargs):
         if uri is None:
@@ -114,13 +118,14 @@ class S3FileStorageManager:
             else:
                 uri = file.uri
 
-        downloader = await self._download(uri, **kwargs)
-
-        # we do not want to timeout ever from this...
-        # downloader['Body'].set_socket_timeout(999999)
-        async with downloader["Body"] as stream:
-            async for data in stream.content.iter_chunked(CHUNK_SIZE):
-                yield data
+        try:
+            downloader = await self._download(uri, **kwargs)
+            async with downloader["Body"] as stream:
+                async for data in stream.content.iter_chunked(CHUNK_SIZE):
+                    yield data
+        except (*RETRIABLE_EXCEPTIONS, asyncio.TimeoutError):
+            log.error(f"Error reading {uri} from S3", exc_info=True)
+            raise
 
     async def range_supported(self) -> bool:
         return True
@@ -306,16 +311,28 @@ class S3BlobStore:
         self._aws_access_key = settings["aws_client_id"]
         self._aws_secret_key = settings["aws_client_secret"]
 
-        max_pool_connections = settings.get(
-            "max_pool_connections", DEFAULT_MAX_POOL_CONNECTIONS
+        max_pool_connections = int(
+            settings.get("max_pool_connections", DEFAULT_MAX_POOL_CONNECTIONS)
         )
+        connect_timeout = float(
+            settings.get("connect_timeout", DEFAULT_CONNECT_TIMEOUT)
+        )
+        read_timeout = float(settings.get("read_timeout", DEFAULT_READ_TIMEOUT))
+        max_attempts = int(settings.get("max_attempts", DEFAULT_MAX_ATTEMPTS))
+        # connect_timeout leaves the wait for a free pooled connection unbounded
+        self.download_timeout = max_attempts * (connect_timeout + read_timeout)
         self._opts = dict(
             aws_secret_access_key=self._aws_secret_key,
             aws_access_key_id=self._aws_access_key,
             endpoint_url=settings.get("endpoint_url"),
             use_ssl=settings.get("ssl", True),
             region_name=settings.get("region_name"),
-            config=Config(max_pool_connections=max_pool_connections),
+            config=Config(
+                max_pool_connections=max_pool_connections,
+                connect_timeout=connect_timeout,
+                read_timeout=read_timeout,
+                retries={"total_max_attempts": max_attempts},
+            ),
         )
 
         self.exit_stack = contextlib.AsyncExitStack()

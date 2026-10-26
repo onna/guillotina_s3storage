@@ -1,3 +1,12 @@
+5.1.7
+-------------------
+
+- Set explicit connect_timeout, read_timeout and a bounded retry count on the
+  S3 client, configurable through settings, and log the underlying error when a
+  download read fails
+- Bound the wait for a pooled connection and the response of a download by
+  max_attempts * (connect_timeout + read_timeout)
+
 5.1.6
 -------------------
 
